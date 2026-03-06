@@ -12,15 +12,14 @@
 
 import os, uuid, sqlite3
 from functools import wraps
-from flask import (Flask, Blueprint, render_template_string, request,
-                   redirect, url_for, session, flash, g, send_from_directory,
-                   current_app)
+from flask import (Flask, render_template_string, request,
+                   redirect, url_for, session, flash, g, send_from_directory)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONFIG
+# CONSTANTS & CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
 SECRET_KEY    = os.environ.get('SECRET_KEY', 'eia-football-league-secret-2026')
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +32,232 @@ PRIZE_LOSS =  -200
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TEMPLATES  (all HTML embedded as strings)
+# FLASK APP  (created first so routes can use @app.route)
+# ─────────────────────────────────────────────────────────────────────────────
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'players'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'news'), exist_ok=True)
+
+def format_dt(value):
+    if value is None: return ''
+    if hasattr(value, 'strftime'): return value.strftime('%Y-%m-%d %H:%M')
+    return str(value)[:16]
+
+app.jinja_env.filters['enumerate'] = enumerate
+app.jinja_env.globals['enumerate'] = enumerate
+app.jinja_env.filters['fmtdt'] = format_dt
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATABASE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(DATABASE, detect_types=sqlite3.PARSE_DECLTYPES)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+    return g.db
+
+def close_db(e=None):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+
+app.teardown_appcontext(close_db)
+
+def init_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.execute("PRAGMA foreign_keys = ON")
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','captain')),
+        team_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (team_id) REFERENCES teams(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, short_name TEXT NOT NULL,
+        badge_color TEXT DEFAULT '#e74c3c', balance REAL DEFAULT 0.0, founded_year INTEGER,
+        home_ground TEXT, league TEXT NOT NULL DEFAULT 'boys' CHECK(league IN ('boys','girls')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS players (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+        position TEXT NOT NULL CHECK(position IN ('GK','DEF','MID','FWD')),
+        team_id INTEGER, price REAL DEFAULT 0.0, goals INTEGER DEFAULT 0,
+        assists INTEGER DEFAULT 0, yellow_cards INTEGER DEFAULT 0, red_cards INTEGER DEFAULT 0,
+        age INTEGER, shirt_number INTEGER,
+        league TEXT NOT NULL DEFAULT 'boys' CHECK(league IN ('boys','girls')),
+        photo_url TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (team_id) REFERENCES teams(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS matches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, home_team_id INTEGER NOT NULL,
+        away_team_id INTEGER NOT NULL, match_date TEXT NOT NULL, venue TEXT,
+        home_goals INTEGER, away_goals INTEGER,
+        status TEXT DEFAULT 'scheduled' CHECK(status IN ('scheduled','played','postponed')),
+        matchday INTEGER DEFAULT 1,
+        league TEXT NOT NULL DEFAULT 'boys' CHECK(league IN ('boys','girls')),
+        prize_applied INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (home_team_id) REFERENCES teams(id),
+        FOREIGN KEY (away_team_id) REFERENCES teams(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS match_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, match_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL, team_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL CHECK(event_type IN ('goal','yellow_card','red_card','assist')),
+        minute INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+        FOREIGN KEY (player_id) REFERENCES players(id),
+        FOREIGN KEY (team_id) REFERENCES teams(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS lineups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, match_id INTEGER NOT NULL,
+        team_id INTEGER NOT NULL, player_id INTEGER NOT NULL,
+        is_starter INTEGER DEFAULT 1, formation TEXT DEFAULT '4-3-3',
+        pitch_row INTEGER DEFAULT 0, pitch_col INTEGER DEFAULT 0, shirt_slot INTEGER DEFAULT 0,
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (match_id) REFERENCES matches(id),
+        FOREIGN KEY (team_id) REFERENCES teams(id),
+        FOREIGN KEY (player_id) REFERENCES players(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS transfers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, player_id INTEGER NOT NULL,
+        from_team_id INTEGER, to_team_id INTEGER NOT NULL, fee REAL NOT NULL,
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+        requested_by INTEGER NOT NULL, admin_note TEXT,
+        requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, resolved_at TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players(id),
+        FOREIGN KEY (from_team_id) REFERENCES teams(id),
+        FOREIGN KEY (to_team_id) REFERENCES teams(id),
+        FOREIGN KEY (requested_by) REFERENCES users(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS news (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, content TEXT NOT NULL,
+        category TEXT DEFAULT 'general' CHECK(category IN ('general','transfer','match','announcement')),
+        posted_by INTEGER NOT NULL, published INTEGER DEFAULT 1,
+        league TEXT DEFAULT 'both' CHECK(league IN ('boys','girls','both')),
+        image_url TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (posted_by) REFERENCES users(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER NOT NULL,
+        amount REAL NOT NULL, description TEXT NOT NULL,
+        transaction_type TEXT CHECK(transaction_type IN
+            ('top_up','transfer_in','transfer_out','admin','match_bonus','match_penalty')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (team_id) REFERENCES teams(id))''')
+    conn.commit()
+    for table, col, typedef in [
+        ("teams","league","TEXT NOT NULL DEFAULT 'boys'"),
+        ("players","league","TEXT NOT NULL DEFAULT 'boys'"),
+        ("matches","league","TEXT NOT NULL DEFAULT 'boys'"),
+        ("matches","prize_applied","INTEGER DEFAULT 0"),
+        ("news","league","TEXT DEFAULT 'both'"),
+        ("lineups","formation","TEXT DEFAULT '4-3-3'"),
+        ("lineups","pitch_row","INTEGER DEFAULT 0"),
+        ("lineups","pitch_col","INTEGER DEFAULT 0"),
+        ("lineups","shirt_slot","INTEGER DEFAULT 0"),
+        ("news","image_url","TEXT DEFAULT NULL"),
+        ("players","photo_url","TEXT DEFAULT NULL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typedef}")
+            conn.commit()
+        except Exception:
+            pass
+    if not conn.execute("SELECT id FROM users WHERE role='admin'").fetchone():
+        conn.execute("INSERT INTO users (username,password_hash,role) VALUES (?,?,?)",
+                     ('admin', generate_password_hash('admin123'), 'admin'))
+        conn.commit()
+        print("Default admin created: username=admin password=admin123")
+    conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IMAGE HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.',1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+def save_image(file, subfolder):
+    if not file or file.filename == '': return None
+    if not allowed_file(file.filename): return None
+    ext = file.filename.rsplit('.',1)[1].lower()
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    dest = os.path.join(UPLOAD_FOLDER, subfolder)
+    os.makedirs(dest, exist_ok=True)
+    file.save(os.path.join(dest, filename))
+    return f'/uploads/{subfolder}/{filename}'
+
+def delete_image(url):
+    if not url: return
+    try:
+        full = os.path.join(BASE_DIR, url.lstrip('/'))
+        if os.path.exists(full): os.remove(full)
+    except Exception: pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTH DECORATORS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in.', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in.', 'warning')
+            return redirect(url_for('login'))
+        if session.get('role') != 'admin':
+            flash('Admin access required.', 'danger')
+            return redirect(url_for('home'))
+        return f(*args, **kwargs)
+    return decorated
+
+def captain_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in.', 'warning')
+            return redirect(url_for('login'))
+        if session.get('role') != 'captain':
+            flash('Captain access required.', 'danger')
+            return redirect(url_for('home'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TEMPLATE RENDERER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render(template_name, **context):
+    if template_name not in TEMPLATES:
+        return f"<h1>Template not found: {template_name}</h1>", 404
+    return render_template_string(TEMPLATES[template_name], **context)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STATIC UPLOADS & ROOT REDIRECT
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+@app.route('/')
+def index():
+    return redirect(url_for('home'))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TEMPLATES (all HTML embedded)
 # ─────────────────────────────────────────────────────────────────────────────
 
 TEMPLATES = {}
@@ -99,220 +323,6 @@ TEMPLATES['public/table.html'] = '{% extends "base.html" %}\n{% block title %}Le
 TEMPLATES['public/team_detail.html'] = '{% extends "base.html" %}\n{% block title %}{{ team.name }} – EIA Football League{% endblock %}\n\n{% block content %}\n<div class="page-header" style="border-top:5px solid {{ team.badge_color }};">\n    <div class="container">\n        <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">\n            <div class="team-badge" style="background:{{ team.badge_color }}; width:72px; height:72px; font-size:1.1rem; border-radius:14px; flex-shrink:0;">{{ team.short_name[:3] }}</div>\n            <div>\n                <h1 style="margin:0;">{{ team.name }}</h1>\n                <p style="font-size:0.78rem; color:rgba(255,255,255,0.55); text-transform:uppercase; letter-spacing:0.12em; margin:4px 0 0;">\n                    {{ league|capitalize }} League\n                    {% if team.home_ground %} · {{ team.home_ground }}{% endif %}\n                    {% if team.founded_year %} · Est. {{ team.founded_year }}{% endif %}\n                </p>\n            </div>\n        </div>\n    </div>\n</div>\n\n<div class="container" style="padding-top:32px; padding-bottom:60px;">\n    <div class="row g-4">\n\n        <!-- LEFT: Squad + Transfers -->\n        <div class="col-lg-8">\n\n            <!-- Team stats bar -->\n            <div class="card" style="margin-bottom:24px; border-top:3px solid {{ team.badge_color }};">\n                <div style="display:grid; grid-template-columns:repeat(4, 1fr); divide-x:1px solid rgba(26,31,94,0.07);">\n                    <div style="padding:20px; text-align:center; border-right:1px solid rgba(26,31,94,0.07);">\n                        <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:1.8rem; color:var(--navy);">{{ players|length }}</div>\n                        <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--grey);">Players</div>\n                    </div>\n                    <div style="padding:20px; text-align:center; border-right:1px solid rgba(26,31,94,0.07);">\n                        <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:1.3rem; color:var(--navy);">£{{ \'{:,.0f}\'.format(team.balance) }}</div>\n                        <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--grey);">Budget</div>\n                    </div>\n                    <div style="padding:20px; text-align:center; border-right:1px solid rgba(26,31,94,0.07);">\n                        <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:1.3rem; color:var(--navy);">{{ captain or \'–\' }}</div>\n                        <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--grey);">Captain</div>\n                    </div>\n                    <div style="padding:20px; text-align:center;">\n                        <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:1.8rem; color:var(--navy);">{{ transfers|length }}</div>\n                        <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--grey);">Transfers</div>\n                    </div>\n                </div>\n            </div>\n\n            <!-- SQUAD TABLE -->\n            <div class="section-label">Squad</div>\n            <div class="card" style="margin-bottom:28px;">\n                <div style="overflow-x:auto;">\n                    <table class="table">\n                        <thead>\n                            <tr>\n                                <th style="width:40px;">#</th>\n                                <th>Player</th>\n                                <th class="text-center">Pos</th>\n                                <th class="text-center">Goals</th>\n                                <th class="text-center">Assists</th>\n                                <th class="text-center">YC</th>\n                                <th class="text-center">RC</th>\n                            </tr>\n                        </thead>\n                        <tbody>\n                            {% for p in players %}\n                            <tr>\n                                <td style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:0.95rem; color:var(--grey);">{{ p.shirt_number or \'–\' }}</td>\n                                <td>\n                                    <div style="display:flex; align-items:center; gap:8px;">\n                                        <div style="width:30px; height:30px; border-radius:50%; background:{{ team.badge_color }}; display:flex; align-items:center; justify-content:center; flex-shrink:0;">\n                                            <span style="font-family:\'Barlow Condensed\',sans-serif; font-size:0.7rem; font-weight:900; color:white;">{{ p.shirt_number or \'?\' }}</span>\n                                        </div>\n                                        <div>\n                                            <div style="font-weight:700; font-size:0.88rem; color:var(--navy);">{{ p.name }}</div>\n                                            {% if p.age %}<div style="font-size:0.7rem; color:var(--grey);">Age {{ p.age }}</div>{% endif %}\n                                        </div>\n                                    </div>\n                                </td>\n                                <td class="text-center"><span class="badge-pos {{ p.position }}" style="font-size:0.65rem;">{{ p.position }}</span></td>\n                                <td class="text-center" style="font-family:\'Barlow Condensed\',sans-serif; font-weight:800; font-size:1rem; color:var(--navy);">{{ p.goals or 0 }}</td>\n                                <td class="text-center" style="font-family:\'Barlow Condensed\',sans-serif; font-weight:800; font-size:1rem; color:var(--grey);">{{ p.assists or 0 }}</td>\n                                <td class="text-center">\n                                    {% if p.yellow_cards %}\n                                    <span style="display:inline-block; width:12px; height:16px; background:#f5a623; border-radius:2px; vertical-align:middle;"></span>\n                                    <span style="font-size:0.8rem; font-weight:700; color:#7a5000; margin-left:3px;">{{ p.yellow_cards }}</span>\n                                    {% else %}<span style="color:var(--grey); font-size:0.8rem;">0</span>{% endif %}\n                                </td>\n                                <td class="text-center">\n                                    {% if p.red_cards %}\n                                    <span style="display:inline-block; width:12px; height:16px; background:var(--red); border-radius:2px; vertical-align:middle;"></span>\n                                    <span style="font-size:0.8rem; font-weight:700; color:#8b0000; margin-left:3px;">{{ p.red_cards }}</span>\n                                    {% else %}<span style="color:var(--grey); font-size:0.8rem;">0</span>{% endif %}\n                                </td>\n                            </tr>\n                            {% else %}\n                            <tr><td colspan="7" style="text-align:center; padding:32px; color:var(--grey); font-size:0.85rem;">No players registered</td></tr>\n                            {% endfor %}\n                        </tbody>\n                    </table>\n                </div>\n            </div>\n\n            <!-- TRANSFER HISTORY -->\n            {% if transfers %}\n            <div class="section-label">Transfer History</div>\n            <div class="card" style="margin-bottom:28px;">\n                <div style="overflow-x:auto;">\n                    <table class="table">\n                        <thead>\n                            <tr>\n                                <th>Player</th>\n                                <th>From</th>\n                                <th></th>\n                                <th>To</th>\n                                <th class="text-right">Fee</th>\n                            </tr>\n                        </thead>\n                        <tbody>\n                            {% for t in transfers %}\n                            <tr>\n                                <td>\n                                    <div style="font-weight:700; font-size:0.88rem; color:var(--navy);">{{ t.player_name }}</div>\n                                    <span class="badge-pos {{ t.player_pos }}" style="font-size:0.6rem;">{{ t.player_pos }}</span>\n                                </td>\n                                <td style="font-size:0.82rem; color:var(--grey);">{{ t.from_team or \'Free Agent\' }}</td>\n                                <td style="text-align:center;">\n                                    {% if t.to_team == team.name %}\n                                    <span style="font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; background:rgba(184,212,0,0.15); color:#4a6000; padding:3px 8px; border-radius:2px;">IN</span>\n                                    {% else %}\n                                    <span style="font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; background:rgba(224,43,43,0.1); color:#8b0000; padding:3px 8px; border-radius:2px;">OUT</span>\n                                    {% endif %}\n                                </td>\n                                <td style="font-size:0.82rem; color:var(--grey);">{{ t.to_team }}</td>\n                                <td style="font-family:\'Barlow Condensed\',sans-serif; font-weight:800; font-size:0.95rem; color:var(--navy); text-align:right;">£{{ \'{:,.0f}\'.format(t.fee) }}</td>\n                            </tr>\n                            {% endfor %}\n                        </tbody>\n                    </table>\n                </div>\n            </div>\n            {% endif %}\n        </div>\n\n        <!-- RIGHT: Recent Results + Lineup -->\n        <div class="col-lg-4">\n\n            <!-- LATEST LINEUP -->\n            {% if latest_lineup %}\n            <div class="section-label">Next Match Lineup</div>\n            <div class="card" style="margin-bottom:24px; border-top:3px solid {{ team.badge_color }};">\n                <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">\n                    <span>Starting XI</span>\n                    <span style="font-size:0.72rem; font-weight:700; letter-spacing:0.08em; color:rgba(255,255,255,0.5);">{{ lineup_formation }}</span>\n                </div>\n\n                <!-- Visual mini pitch -->\n                <div style="position:relative; margin:16px; border-radius:6px; overflow:hidden; background:linear-gradient(180deg, #2d7a2d 0%, #348c34 25%, #2d7a2d 50%, #348c34 75%, #2d7a2d 100%); padding-bottom:130%;">\n                    <svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;" viewBox="0 0 200 260" xmlns="http://www.w3.org/2000/svg">\n                        <rect x="6" y="6" width="188" height="248" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>\n                        <line x1="6" y1="130" x2="194" y2="130" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>\n                        <circle cx="100" cy="130" r="26" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>\n                        <rect x="55" y="6" width="90" height="36" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>\n                        <rect x="55" y="218" width="90" height="36" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>\n                    </svg>\n                    {% set rows = namespace(data={}) %}\n                    {% for p in latest_lineup %}\n                        {% set rk = p.pitch_row|string %}\n                        {% if rk not in rows.data %}{% set _ = rows.data.update({rk: []}) %}{% endif %}\n                        {% set _ = rows.data[rk].append(p) %}\n                    {% endfor %}\n                    {% set sorted_rows = rows.data.keys()|list|sort %}\n                    {% set row_count = sorted_rows|length %}\n                    {% for rk in sorted_rows %}\n                    {% set row_players = rows.data[rk] %}\n                    {% set ri = loop.index0 %}\n                    {% set y_pct = 8 + (ri / row_count) * 82 %}\n                    {% for p in row_players %}\n                    {% set x_pct = (loop.index0 + 1) / (row_players|length + 1) * 100 %}\n                    <div style="position:absolute; left:{{ x_pct }}%; top:{{ y_pct }}%; transform:translate(-50%,-50%); text-align:center; z-index:10;">\n                        <div style="width:28px; height:28px; border-radius:50%; background:{{ team.badge_color }}; border:2px solid white; display:flex; align-items:center; justify-content:center; margin:0 auto;">\n                            <span style="font-family:\'Barlow Condensed\',sans-serif; font-size:0.62rem; font-weight:900; color:white;">{{ p.shirt_number or loop.index }}</span>\n                        </div>\n                        <div style="font-size:0.5rem; color:white; font-weight:700; text-shadow:0 1px 2px rgba(0,0,0,0.8); white-space:nowrap; overflow:hidden; max-width:38px; margin-top:2px;">{{ p.player_name.split(\' \')|last }}</div>\n                    </div>\n                    {% endfor %}\n                    {% endfor %}\n                </div>\n\n                <!-- Player list below pitch -->\n                <div style="padding:12px 16px 16px;">\n                    {% for p in latest_lineup %}\n                    <div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid rgba(26,31,94,0.05);">\n                        <div style="width:22px; height:22px; border-radius:50%; background:{{ team.badge_color }}; display:flex; align-items:center; justify-content:center; flex-shrink:0;">\n                            <span style="font-size:0.6rem; font-weight:900; color:white;">{{ p.shirt_number or loop.index }}</span>\n                        </div>\n                        <span style="font-size:0.82rem; font-weight:600; flex:1; color:var(--navy);">{{ p.player_name }}</span>\n                        <span class="badge-pos {{ p.player_pos }}" style="font-size:0.58rem; padding:1px 5px;">{{ p.player_pos }}</span>\n                    </div>\n                    {% endfor %}\n                </div>\n            </div>\n            {% endif %}\n\n            <!-- RECENT RESULTS -->\n            <div class="section-label">Recent Results</div>\n            <div class="card">\n                <div class="card-header">Recent Matches</div>\n                {% for r in recent %}\n                {% set m = r.match %}\n                <div style="padding:16px 20px; border-bottom:1px solid rgba(26,31,94,0.06);">\n                    <div style="display:flex; align-items:center; gap:10px; justify-content:center;">\n                        <span style="font-size:0.82rem; font-weight:600; flex:1; text-align:right; color:{% if m.home_team_id == team.id %}var(--navy){% else %}var(--grey){% endif %};">{{ m.home_name }}</span>\n                        <span class="score-box" style="font-size:1rem; padding:4px 12px; flex-shrink:0;">{{ m.home_goals }}–{{ m.away_goals }}</span>\n                        <span style="font-size:0.82rem; font-weight:600; flex:1; color:{% if m.away_team_id == team.id %}var(--navy){% else %}var(--grey){% endif %};">{{ m.away_name }}</span>\n                    </div>\n                    <div style="text-align:center; margin-top:6px; font-size:0.7rem; color:var(--grey);">{{ m.match_date[:10] }}</div>\n                    {% if r.events %}\n                    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:4px; justify-content:center;">\n                        {% for e in r.events %}\n                        {% if e.event_type == \'goal\' %}\n                        <span style="font-size:0.65rem; background:rgba(184,212,0,0.15); color:#4a6000; padding:2px 6px; border-radius:2px; font-weight:700;">⚽ {{ e.player_name }}{% if e.minute %} {{ e.minute }}\'{% endif %}</span>\n                        {% elif e.event_type == \'yellow_card\' %}\n                        <span style="font-size:0.65rem; background:rgba(245,166,35,0.15); color:#7a5000; padding:2px 6px; border-radius:2px; font-weight:700;">🟨 {{ e.player_name }}</span>\n                        {% elif e.event_type == \'red_card\' %}\n                        <span style="font-size:0.65rem; background:rgba(224,43,43,0.1); color:#8b0000; padding:2px 6px; border-radius:2px; font-weight:700;">🟥 {{ e.player_name }}</span>\n                        {% endif %}\n                        {% endfor %}\n                    </div>\n                    {% endif %}\n                </div>\n                {% else %}\n                <div style="padding:32px; text-align:center; color:var(--grey); font-size:0.85rem;">No results yet</div>\n                {% endfor %}\n            </div>\n        </div>\n\n    </div>\n</div>\n{% endblock %}\n'
 
 TEMPLATES['public/teams.html'] = '{% extends "base.html" %}\n{% block title %}Teams – EIA Football League{% endblock %}\n\n{% block content %}\n<div class="page-header">\n    <div class="container">\n        <h1>Teams &amp; Clubs</h1>\n        <p style="font-size:0.82rem; color:rgba(255,255,255,0.55); text-transform:uppercase; letter-spacing:0.12em; margin:6px 0 0;">\n            {{ league|capitalize }} League · {{ teams|length }} Club{{ \'s\' if teams|length != 1 else \'\' }}\n        </p>\n    </div>\n</div>\n\n<!-- League switcher -->\n<div style="background:white; border-bottom:2px solid rgba(26,31,94,0.08); padding:0;">\n    <div class="container">\n        <div style="display:flex; gap:0;">\n            <a href="{{ url_for(\'public.teams\', league=\'boys\') }}"\n               style="font-family:\'Barlow Condensed\',sans-serif; font-weight:800; font-size:0.88rem; letter-spacing:0.12em; text-transform:uppercase; padding:14px 28px; text-decoration:none; border-bottom:3px solid {% if league==\'boys\' %}var(--lime){% else %}transparent{% endif %}; color:{% if league==\'boys\' %}var(--navy){% else %}var(--grey){% endif %}; margin-bottom:-2px;">\n                Boys League\n            </a>\n            <a href="{{ url_for(\'public.teams\', league=\'girls\') }}"\n               style="font-family:\'Barlow Condensed\',sans-serif; font-weight:800; font-size:0.88rem; letter-spacing:0.12em; text-transform:uppercase; padding:14px 28px; text-decoration:none; border-bottom:3px solid {% if league==\'girls\' %}var(--lime){% else %}transparent{% endif %}; color:{% if league==\'girls\' %}var(--navy){% else %}var(--grey){% endif %}; margin-bottom:-2px;">\n                Girls League\n            </a>\n        </div>\n    </div>\n</div>\n\n<div class="container" style="padding-top:40px; padding-bottom:60px;">\n    <div class="row g-4">\n        {% for entry in teams %}\n        {% set team = entry.team %}\n        <div class="col-lg-4 col-md-6">\n            <div class="card h-100" style="border-top:4px solid {{ team.badge_color }};">\n                <!-- Team Header -->\n                <div style="padding:28px 28px 20px; display:flex; align-items:center; gap:18px;">\n                    <div class="team-badge" style="background:{{ team.badge_color }}; width:64px; height:64px; font-size:1rem; border-radius:12px; flex-shrink:0;">{{ team.short_name[:3] }}</div>\n                    <div>\n                        <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:1.35rem; letter-spacing:0.05em; text-transform:uppercase; color:var(--navy); line-height:1.1;">{{ team.name }}</div>\n                        {% if team.home_ground %}\n                        <div style="font-size:0.75rem; color:var(--grey); margin-top:3px; display:flex; align-items:center; gap:4px;">\n                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>\n                            {{ team.home_ground }}\n                        </div>\n                        {% endif %}\n                    </div>\n                </div>\n\n                <!-- Stats Row -->\n                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; border-top:1px solid rgba(26,31,94,0.07); border-bottom:1px solid rgba(26,31,94,0.07);">\n                    <div style="padding:14px 12px; text-align:center; border-right:1px solid rgba(26,31,94,0.07);">\n                        <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:1.5rem; color:var(--navy);">{{ team.player_count }}</div>\n                        <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--grey);">Players</div>\n                    </div>\n                    <div style="padding:14px 12px; text-align:center; border-right:1px solid rgba(26,31,94,0.07);">\n                        <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:1.15rem; color:var(--navy);">£{{ \'{:,.0f}\'.format(team.balance) }}</div>\n                        <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--grey);">Budget</div>\n                    </div>\n                    <div style="padding:14px 12px; text-align:center;">\n                        <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:1.15rem; color:var(--navy);">{{ team.founded_year or \'–\' }}</div>\n                        <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--grey);">Founded</div>\n                    </div>\n                </div>\n\n                <!-- Captain -->\n                <div style="padding:14px 20px; border-bottom:1px solid rgba(26,31,94,0.07); display:flex; align-items:center; gap:10px;">\n                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--grey)" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>\n                    <div>\n                        <span style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--grey);">Captain: </span>\n                        <span style="font-size:0.85rem; font-weight:700; color:var(--navy);">{{ entry.captain or \'Not assigned\' }}</span>\n                    </div>\n                </div>\n\n                <!-- Transfer History -->\n                {% if entry.transfers %}\n                <div style="padding:14px 20px 10px;">\n                    <div style="font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.12em; color:var(--grey); margin-bottom:8px;">Recent Transfers</div>\n                    {% for t in entry.transfers %}\n                    <div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid rgba(26,31,94,0.05);">\n                        <span class="badge-pos {{ t.player_pos }}" style="font-size:0.6rem; padding:2px 5px;">{{ t.player_pos }}</span>\n                        <span style="font-size:0.82rem; font-weight:600; flex:1; color:var(--navy);">{{ t.player_name }}</span>\n                        {% if t.to_team == team.name %}\n                        <span style="font-size:0.68rem; font-weight:700; color:#4a6000; background:rgba(184,212,0,0.12); padding:2px 7px; border-radius:2px;">IN</span>\n                        {% else %}\n                        <span style="font-size:0.68rem; font-weight:700; color:#8b0000; background:rgba(224,43,43,0.08); padding:2px 7px; border-radius:2px;">OUT</span>\n                        {% endif %}\n                        <span style="font-size:0.75rem; color:var(--grey);">£{{ \'{:,.0f}\'.format(t.fee) }}</span>\n                    </div>\n                    {% endfor %}\n                </div>\n                {% endif %}\n\n                <div style="padding:16px 20px; margin-top:auto;">\n                    <a href="{{ url_for(\'public.team_detail\', team_id=team.id) }}"\n                       class="btn btn-primary" style="width:100%; text-align:center; display:block;">\n                        View Full Squad\n                    </a>\n                </div>\n            </div>\n        </div>\n        {% else %}\n        <div class="col-12">\n            <div class="card">\n                <div style="padding:60px; text-align:center; color:var(--grey);">\n                    <div style="font-family:\'Barlow Condensed\',sans-serif; font-size:1.2rem; font-weight:700; text-transform:uppercase; margin-bottom:8px;">No teams yet</div>\n                    <p style="font-size:0.85rem;">No teams registered for the {{ league }} league.</p>\n                </div>\n            </div>\n        </div>\n        {% endfor %}\n    </div>\n</div>\n{% endblock %}\n'
-
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DATABASE
-# ─────────────────────────────────────────────────────────────────────────────
-
-def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect(DATABASE, detect_types=sqlite3.PARSE_DECLTYPES)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
-    return g.db
-
-
-def close_db(e=None):
-    db = g.pop('db', None)
-    if db is not None:
-        db.close()
-
-
-def init_db():
-    os.makedirs(os.path.dirname(DATABASE), exist_ok=True) if os.path.dirname(DATABASE) else None
-    conn = sqlite3.connect(DATABASE)
-    conn.execute("PRAGMA foreign_keys = ON")
-    c = conn.cursor()
-
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','captain')),
-        team_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (team_id) REFERENCES teams(id))''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS teams (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, short_name TEXT NOT NULL,
-        badge_color TEXT DEFAULT '#e74c3c', balance REAL DEFAULT 0.0, founded_year INTEGER,
-        home_ground TEXT, league TEXT NOT NULL DEFAULT 'boys' CHECK(league IN ('boys','girls')),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS players (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-        position TEXT NOT NULL CHECK(position IN ('GK','DEF','MID','FWD')),
-        team_id INTEGER, price REAL DEFAULT 0.0, goals INTEGER DEFAULT 0,
-        assists INTEGER DEFAULT 0, yellow_cards INTEGER DEFAULT 0, red_cards INTEGER DEFAULT 0,
-        age INTEGER, shirt_number INTEGER,
-        league TEXT NOT NULL DEFAULT 'boys' CHECK(league IN ('boys','girls')),
-        photo_url TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (team_id) REFERENCES teams(id))''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS matches (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, home_team_id INTEGER NOT NULL,
-        away_team_id INTEGER NOT NULL, match_date TEXT NOT NULL, venue TEXT,
-        home_goals INTEGER, away_goals INTEGER,
-        status TEXT DEFAULT 'scheduled' CHECK(status IN ('scheduled','played','postponed')),
-        matchday INTEGER DEFAULT 1,
-        league TEXT NOT NULL DEFAULT 'boys' CHECK(league IN ('boys','girls')),
-        prize_applied INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (home_team_id) REFERENCES teams(id),
-        FOREIGN KEY (away_team_id) REFERENCES teams(id))''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS match_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, match_id INTEGER NOT NULL,
-        player_id INTEGER NOT NULL, team_id INTEGER NOT NULL,
-        event_type TEXT NOT NULL CHECK(event_type IN ('goal','yellow_card','red_card','assist')),
-        minute INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
-        FOREIGN KEY (player_id) REFERENCES players(id),
-        FOREIGN KEY (team_id) REFERENCES teams(id))''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS lineups (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, match_id INTEGER NOT NULL,
-        team_id INTEGER NOT NULL, player_id INTEGER NOT NULL,
-        is_starter INTEGER DEFAULT 1, formation TEXT DEFAULT '4-3-3',
-        pitch_row INTEGER DEFAULT 0, pitch_col INTEGER DEFAULT 0, shirt_slot INTEGER DEFAULT 0,
-        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (match_id) REFERENCES matches(id),
-        FOREIGN KEY (team_id) REFERENCES teams(id),
-        FOREIGN KEY (player_id) REFERENCES players(id))''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS transfers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, player_id INTEGER NOT NULL,
-        from_team_id INTEGER, to_team_id INTEGER NOT NULL, fee REAL NOT NULL,
-        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
-        requested_by INTEGER NOT NULL, admin_note TEXT,
-        requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, resolved_at TIMESTAMP,
-        FOREIGN KEY (player_id) REFERENCES players(id),
-        FOREIGN KEY (from_team_id) REFERENCES teams(id),
-        FOREIGN KEY (to_team_id) REFERENCES teams(id),
-        FOREIGN KEY (requested_by) REFERENCES users(id))''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS news (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        category TEXT DEFAULT 'general' CHECK(category IN ('general','transfer','match','announcement')),
-        posted_by INTEGER NOT NULL, published INTEGER DEFAULT 1,
-        league TEXT DEFAULT 'both' CHECK(league IN ('boys','girls','both')),
-        image_url TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (posted_by) REFERENCES users(id))''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, team_id INTEGER NOT NULL,
-        amount REAL NOT NULL, description TEXT NOT NULL,
-        transaction_type TEXT CHECK(transaction_type IN
-            ('top_up','transfer_in','transfer_out','admin','match_bonus','match_penalty')),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (team_id) REFERENCES teams(id))''')
-
-    conn.commit()
-
-    # Migrations
-    migrate_cols = [
-        ("teams","league","TEXT NOT NULL DEFAULT 'boys'"),
-        ("players","league","TEXT NOT NULL DEFAULT 'boys'"),
-        ("matches","league","TEXT NOT NULL DEFAULT 'boys'"),
-        ("matches","prize_applied","INTEGER DEFAULT 0"),
-        ("news","league","TEXT DEFAULT 'both'"),
-        ("lineups","formation","TEXT DEFAULT '4-3-3'"),
-        ("lineups","pitch_row","INTEGER DEFAULT 0"),
-        ("lineups","pitch_col","INTEGER DEFAULT 0"),
-        ("lineups","shirt_slot","INTEGER DEFAULT 0"),
-        ("news","image_url","TEXT DEFAULT NULL"),
-        ("players","photo_url","TEXT DEFAULT NULL"),
-    ]
-    for table, col, typedef in migrate_cols:
-        try:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typedef}")
-            conn.commit()
-        except Exception:
-            pass
-
-    existing = conn.execute("SELECT id FROM users WHERE role='admin'").fetchone()
-    if not existing:
-        conn.execute("INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
-                     ('admin', generate_password_hash('admin123'), 'admin'))
-        conn.commit()
-        print("Default admin created: username='admin' password='admin123'")
-
-    conn.close()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# IMAGE UPLOAD HELPERS
-# ─────────────────────────────────────────────────────────────────────────────
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.',1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
-
-def save_image(file, subfolder):
-    if not file or file.filename == '': return None
-    if not allowed_file(file.filename): return None
-    ext      = file.filename.rsplit('.',1)[1].lower()
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    dest     = os.path.join(UPLOAD_FOLDER, subfolder)
-    os.makedirs(dest, exist_ok=True)
-    file.save(os.path.join(dest, filename))
-    return f'/uploads/{subfolder}/{filename}'
-
-def delete_image(url):
-    if not url: return
-    try:
-        full = os.path.join(BASE_DIR, url.lstrip('/'))
-        if os.path.exists(full): os.remove(full)
-    except Exception: pass
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# AUTH DECORATORS
-# ─────────────────────────────────────────────────────────────────────────────
-
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if 'user_id' not in session:
-            flash('Please log in.', 'warning')
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated
-
-def admin_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if 'user_id' not in session:
-            flash('Please log in.', 'warning')
-            return redirect(url_for('login'))
-        if session.get('role') != 'admin':
-            flash('Admin access required.', 'danger')
-            return redirect(url_for('home'))
-        return f(*args, **kwargs)
-    return decorated
-
-def captain_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if 'user_id' not in session:
-            flash('Please log in.', 'warning')
-            return redirect(url_for('login'))
-        if session.get('role') != 'captain':
-            flash('Captain access required.', 'danger')
-            return redirect(url_for('home'))
-        return f(*args, **kwargs)
-    return decorated
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TEMPLATE RENDERER  (uses embedded strings above)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def render(template_name, **context):
-    """Render an embedded template by name."""
-    if template_name not in TEMPLATES:
-        return f"<h1>Template not found: {template_name}</h1>", 404
-    return render_template_string(TEMPLATES[template_name], **context)
-
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PUBLIC ROUTES
@@ -678,7 +688,6 @@ def scorers():
                            most_yellows=most_yellows,
                            league=league)
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # AUTH ROUTES
 # ─────────────────────────────────────────────────────────────────────────────
@@ -734,7 +743,6 @@ def logout():
     session.clear()
     flash('You have been logged out.', 'info')
     return redirect(url_for('home'))
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CAPTAIN ROUTES
@@ -1084,7 +1092,6 @@ def submit_lineup(match_id):
                            team=team, match=match, players=players,
                            starter_ids=starter_ids, sub_ids=sub_ids,
                            saved_formation=saved_formation, positions=positions)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ADMIN ROUTES
@@ -1789,36 +1796,9 @@ def delete_user(user_id):
     return redirect(url_for('users'))
 
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# APP FACTORY & ENTRY POINT
+# INIT & ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
-
-app = Flask(__name__)
-app.secret_key = SECRET_KEY
-app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
-
-os.makedirs(os.path.join(UPLOAD_FOLDER, 'players'), exist_ok=True)
-os.makedirs(os.path.join(UPLOAD_FOLDER, 'news'), exist_ok=True)
-
-@app.route('/uploads/<path:filename>')
-def uploaded_file(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
-
-@app.route('/')
-def index():
-    return redirect(url_for('home'))
-
-app.jinja_env.filters['enumerate'] = enumerate
-app.jinja_env.globals['enumerate'] = enumerate
-
-def format_dt(value):
-    if value is None: return ''
-    if hasattr(value, 'strftime'): return value.strftime('%Y-%m-%d %H:%M')
-    return str(value)[:16]
-app.jinja_env.filters['fmtdt'] = format_dt
-
-app.teardown_appcontext(close_db)
 
 with app.app_context():
     init_db()
