@@ -1145,9 +1145,9 @@ def captain_dashboard():
 # TEAM MANAGEMENT
 # ─────────────────────────────────────────────────────────────────────────────
 
-@app.route('/teams')
+@app.route('/admin/teams')
 @admin_required
-def teams():
+def admin_teams():
     db = get_db()
     league = request.args.get('league', 'boys')
     teams = db.execute('''
@@ -1191,7 +1191,7 @@ def add_team():
                 ''', (cap_user, generate_password_hash(cap_pass), team_id))
             db.execute('COMMIT')
             flash(f'Team "{name}" created!', 'success')
-            return redirect(url_for('teams', league=league))
+            return redirect(url_for('admin_teams', league=league))
         except Exception as e:
             flash(f'Error: {str(e)}', 'danger')
 
@@ -1205,7 +1205,7 @@ def edit_team(team_id):
     team = db.execute('SELECT * FROM teams WHERE id=?', (team_id,)).fetchone()
     if not team:
         flash('Team not found.', 'danger')
-        return redirect(url_for('teams'))
+        return redirect(url_for('admin_teams'))
 
     if request.method == 'POST':
         name         = request.form['name'].strip()
@@ -1220,7 +1220,7 @@ def edit_team(team_id):
         ''', (name, short_name, badge_color, home_ground, founded_year, league, team_id))
         db.execute('COMMIT')
         flash(f'Team "{name}" updated!', 'success')
-        return redirect(url_for('teams', league=league))
+        return redirect(url_for('admin_teams', league=league))
 
     return render('admin/team_form.html', team=team, action='Edit', league=team['league'])
 
@@ -1234,7 +1234,7 @@ def delete_team(team_id):
     db.execute('DELETE FROM teams WHERE id=?', (team_id,))
     db.execute('COMMIT')
     flash('Team deleted.', 'success')
-    return redirect(url_for('teams', league=league))
+    return redirect(url_for('admin_teams', league=league))
 
 
 @app.route('/teams/<int:team_id>/add_money', methods=['POST'])
@@ -1244,7 +1244,7 @@ def add_money(team_id):
     description = request.form.get('description', 'Admin top-up')
     if amount <= 0:
         flash('Amount must be positive.', 'danger')
-        return redirect(url_for('teams'))
+        return redirect(url_for('admin_teams'))
     db = get_db()
     t = db.execute('SELECT league FROM teams WHERE id=?', (team_id,)).fetchone()
     db.execute('UPDATE teams SET balance = balance + ? WHERE id=?', (amount, team_id))
@@ -1254,7 +1254,7 @@ def add_money(team_id):
     ''', (team_id, amount, description))
     db.execute('COMMIT')
     flash(f'€{amount:,.0f} added to team balance!', 'success')
-    return redirect(url_for('teams', league=t['league'] if t else 'boys'))
+    return redirect(url_for('admin_teams', league=t['league'] if t else 'boys'))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
