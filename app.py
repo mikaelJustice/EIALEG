@@ -1677,9 +1677,9 @@ def delete_match(match_id):
 # NEWS MANAGEMENT
 # ─────────────────────────────────────────────────────────────────────────────
 
-@app.route('/news')
+@app.route('/admin/news')
 @admin_required
-def news():
+def admin_news():
     db = get_db()
     articles = db.execute('''
         SELECT n.*, u.username as author FROM news n
@@ -1706,7 +1706,7 @@ def add_news():
         ''', (title, content, category, session['user_id'], published, league, image_url))
         db.execute('COMMIT')
         flash('News article posted!', 'success')
-        return redirect(url_for('news'))
+        return redirect(url_for('admin_news'))
     return render('admin/news_form.html', article=None, action='Post')
 
 
@@ -1731,7 +1731,7 @@ def edit_news(news_id):
         ''', (title, content, category, published, league, image_url, news_id))
         db.execute('COMMIT')
         flash('Article updated!', 'success')
-        return redirect(url_for('news'))
+        return redirect(url_for('admin_news'))
     return render('admin/news_form.html', article=article, action='Edit')
 
 
@@ -1742,7 +1742,7 @@ def delete_news(news_id):
     db.execute('DELETE FROM news WHERE id=?', (news_id,))
     db.execute('COMMIT')
     flash('Article deleted.', 'success')
-    return redirect(url_for('news'))
+    return redirect(url_for('admin_news'))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
