@@ -1358,9 +1358,9 @@ def delete_player(player_id):
 # TRANSFER MANAGEMENT
 # ─────────────────────────────────────────────────────────────────────────────
 
-@app.route('/transfers')
+@app.route('/admin/transfers')
 @admin_required
-def transfers():
+def admin_transfers():
     db = get_db()
     transfers = db.execute('''
         SELECT t.*, p.name as player_name, p.position as player_position,
@@ -1384,7 +1384,7 @@ def approve_transfer(transfer_id):
     transfer = db.execute('SELECT * FROM transfers WHERE id=?', (transfer_id,)).fetchone()
     if not transfer or transfer['status'] != 'pending':
         flash('Transfer not found or already processed.', 'danger')
-        return redirect(url_for('transfers'))
+        return redirect(url_for('admin_transfers'))
 
     admin_note   = request.form.get('admin_note', '')
     fee          = transfer['fee']
@@ -1400,7 +1400,7 @@ def approve_transfer(transfer_id):
             WHERE id=?
         ''', ('Insufficient funds - ' + admin_note, transfer_id))
         db.execute('COMMIT')
-        return redirect(url_for('transfers'))
+        return redirect(url_for('admin_transfers'))
 
     player = db.execute('SELECT * FROM players WHERE id=?', (player_id,)).fetchone()
     db.execute('UPDATE players SET team_id=? WHERE id=?', (to_team_id, player_id))
@@ -1421,7 +1421,7 @@ def approve_transfer(transfer_id):
     ''', (admin_note, transfer_id))
     db.execute('COMMIT')
     flash(f'Transfer approved! {player["name"]} has moved teams.', 'success')
-    return redirect(url_for('transfers'))
+    return redirect(url_for('admin_transfers'))
 
 
 @app.route('/transfers/<int:transfer_id>/reject', methods=['POST'])
@@ -1435,7 +1435,7 @@ def reject_transfer(transfer_id):
     ''', (admin_note, transfer_id))
     db.execute('COMMIT')
     flash('Transfer rejected.', 'warning')
-    return redirect(url_for('transfers'))
+    return redirect(url_for('admin_transfers'))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
