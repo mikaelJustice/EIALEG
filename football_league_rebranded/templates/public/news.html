@@ -13,11 +13,11 @@
 <div style="background:white; border-bottom:2px solid rgba(26,31,94,0.08);">
     <div class="container">
         <div style="display:flex;">
-            <a href="{{ url_for('public.news', league='boys') }}"
+            <a href="{{ url_for('news', league='boys') }}"
                style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:0.88rem; letter-spacing:0.12em; text-transform:uppercase; padding:14px 28px; text-decoration:none; border-bottom:3px solid {% if league=='boys' %}var(--lime){% else %}transparent{% endif %}; color:{% if league=='boys' %}var(--navy){% else %}var(--grey){% endif %}; margin-bottom:-2px;">
                 Boys League
             </a>
-            <a href="{{ url_for('public.news', league='girls') }}"
+            <a href="{{ url_for('news', league='girls') }}"
                style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:0.88rem; letter-spacing:0.12em; text-transform:uppercase; padding:14px 28px; text-decoration:none; border-bottom:3px solid {% if league=='girls' %}var(--lime){% else %}transparent{% endif %}; color:{% if league=='girls' %}var(--navy){% else %}var(--grey){% endif %}; margin-bottom:-2px;">
                 Girls League
             </a>
@@ -29,7 +29,7 @@
     <div class="row g-4">
         {% for article in articles %}
         <div class="col-md-4 col-sm-6">
-            <a href="{{ url_for('public.news_detail', news_id=article.id) }}" style="text-decoration:none; display:block; height:100%;">
+            <a href="{{ url_for('news_detail', news_id=article.id) }}" style="text-decoration:none; display:block; height:100%;">
                 <div class="card h-100" style="transition:transform 0.2s; overflow:hidden;" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform=''">
                     <!-- Featured image -->
                     {% if article.image_url %}

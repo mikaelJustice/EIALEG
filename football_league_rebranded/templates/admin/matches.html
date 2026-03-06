@@ -10,7 +10,7 @@
         </h2>
         <p style="font-size:0.78rem; color:var(--grey); text-transform:uppercase; letter-spacing:0.1em; margin:4px 0 0;">Manage match schedule and enter scores</p>
     </div>
-    <a href="{{ url_for('admin.add_match', league=league) }}" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:8px;">
+    <a href="{{ url_for('add_match', league=league) }}" class="btn btn-primary" style="display:inline-flex; align-items:center; gap:8px;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Create Fixture
     </a>
@@ -18,11 +18,11 @@
 
 <!-- LEAGUE TABS -->
 <div style="display:flex; gap:0; margin-bottom:28px; border-bottom:2px solid rgba(26,31,94,0.1);">
-    <a href="{{ url_for('admin.matches', league='boys') }}"
+    <a href="{{ url_for('admin_matches', league='boys') }}"
        style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:0.88rem; letter-spacing:0.12em; text-transform:uppercase; padding:10px 24px; text-decoration:none; border-bottom:3px solid {% if league=='boys' %}var(--lime){% else %}transparent{% endif %}; color:{% if league=='boys' %}var(--navy){% else %}var(--grey){% endif %}; margin-bottom:-2px;">
         Boys League
     </a>
-    <a href="{{ url_for('admin.matches', league='girls') }}"
+    <a href="{{ url_for('admin_matches', league='girls') }}"
        style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:0.88rem; letter-spacing:0.12em; text-transform:uppercase; padding:10px 24px; text-decoration:none; border-bottom:3px solid {% if league=='girls' %}var(--lime){% else %}transparent{% endif %}; color:{% if league=='girls' %}var(--navy){% else %}var(--grey){% endif %}; margin-bottom:-2px;">
         Girls League
     </a>
@@ -83,15 +83,15 @@
                     </td>
                     <td>
                         <div style="display:flex; gap:6px; align-items:center;">
-                            <a href="{{ url_for('admin.enter_result', match_id=m.id) }}" title="Enter Result"
+                            <a href="{{ url_for('enter_result', match_id=m.id) }}" title="Enter Result"
                                style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:var(--lime); color:var(--navy); border-radius:3px; text-decoration:none;">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                             </a>
-                            <a href="{{ url_for('admin.edit_match', match_id=m.id) }}" title="Edit"
+                            <a href="{{ url_for('edit_match', match_id=m.id) }}" title="Edit"
                                style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:rgba(26,31,94,0.08); color:var(--navy); border-radius:3px; text-decoration:none;">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </a>
-                            <form method="POST" action="{{ url_for('admin.delete_match', match_id=m.id) }}" style="display:inline;" onsubmit="return confirm('Delete this match?')">
+                            <form method="POST" action="{{ url_for('delete_match', match_id=m.id) }}" style="display:inline;" onsubmit="return confirm('Delete this match?')">
                                 <button type="submit" title="Delete"
                                     style="display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:rgba(224,43,43,0.08); color:var(--red); border:none; border-radius:3px; cursor:pointer;">
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
@@ -104,7 +104,7 @@
                 <tr>
                     <td colspan="7" style="text-align:center; padding:48px; color:var(--grey);">
                         <div style="font-family:'Barlow Condensed',sans-serif; font-size:1.1rem; font-weight:700; text-transform:uppercase; margin-bottom:8px;">No fixtures yet</div>
-                        <a href="{{ url_for('admin.add_match', league=league) }}" style="font-size:0.82rem; color:var(--lime); font-weight:700; text-decoration:none;">+ Create first fixture</a>
+                        <a href="{{ url_for('add_match', league=league) }}" style="font-size:0.82rem; color:var(--lime); font-weight:700; text-decoration:none;">+ Create first fixture</a>
                     </td>
                 </tr>
                 {% endfor %}

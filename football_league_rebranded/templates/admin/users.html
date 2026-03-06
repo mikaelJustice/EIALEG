@@ -6,7 +6,7 @@
     <h2 style="font-family:'Barlow Condensed',sans-serif;color:var(--lime);letter-spacing:2px">
         <i class="bi bi-people-fill me-3"></i>Users
     </h2>
-    <a href="{{ url_for('admin.add_user') }}" class="btn btn-primary">
+    <a href="{{ url_for('add_user') }}" class="btn btn-primary">
         <i class="bi bi-person-plus me-2"></i>Add User
     </a>
 </div>
@@ -35,7 +35,7 @@
                         <td class="text-muted small">{{ user.created_at|fmtdt|truncate(10,True,"") }}</td>
                         <td>
                             {% if user.id != session.user_id %}
-                            <form method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}"
+                            <form method="POST" action="{{ url_for('delete_user', user_id=user.id) }}"
                                   class="d-inline"
                                   onsubmit="return confirm('Delete user {{ user.username }}?')">
                                 <button class="btn btn-sm btn-outline-danger py-0 px-2">

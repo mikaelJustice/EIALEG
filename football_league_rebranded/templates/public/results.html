@@ -23,7 +23,7 @@
                 <div class="col-4 text-end">
                     <div class="d-flex align-items-center justify-content-end gap-2">
                         <div>
-                            <a href="{{ url_for('public.team_detail', team_id=m.home_team_id, league=league) }}"
+                            <a href="{{ url_for('team_detail', team_id=m.home_team_id, league=league) }}"
                                class="text-decoration-none fw-bold
                                {% if m.home_goals > m.away_goals %}text-white{% else %}text-muted{% endif %}
                                fs-5">{{ m.home_name }}</a>
@@ -66,7 +66,7 @@
                             {{ m.away_short }}
                         </div>
                         <div>
-                            <a href="{{ url_for('public.team_detail', team_id=m.away_team_id, league=league) }}"
+                            <a href="{{ url_for('team_detail', team_id=m.away_team_id, league=league) }}"
                                class="text-decoration-none fw-bold
                                {% if m.away_goals > m.home_goals %}text-white{% else %}text-muted{% endif %}
                                fs-5">{{ m.away_name }}</a>

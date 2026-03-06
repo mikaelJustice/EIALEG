@@ -53,9 +53,9 @@
     <div class="container d-flex justify-content-between align-items-center">
         <h1><i class="bi bi-people me-3"></i>My Squad – {{ team.name }}</h1>
         <div class="d-flex gap-2">
-            <a href="{{ url_for('captain.dashboard') }}" class="btn btn-outline-secondary btn-sm">Dashboard</a>
-            <a href="{{ url_for('captain.transfers') }}" class="btn btn-outline-secondary btn-sm">Transfers</a>
-            <a href="{{ url_for('captain.lineups') }}" class="btn btn-outline-secondary btn-sm">Lineups</a>
+            <a href="{{ url_for('captain_dashboard') }}" class="btn btn-outline-secondary btn-sm">Dashboard</a>
+            <a href="{{ url_for('captain_transfers') }}" class="btn btn-outline-secondary btn-sm">Transfers</a>
+            <a href="{{ url_for('captain_lineups') }}" class="btn btn-outline-secondary btn-sm">Lineups</a>
         </div>
     </div>
 </div>
@@ -108,7 +108,7 @@
                                             📸 {{ p.name }}
                                         </div>
                                         <form method="POST"
-                                              action="{{ url_for('captain.upload_player_photo', player_id=p.id) }}"
+                                              action="{{ url_for('upload_player_photo', player_id=p.id) }}"
                                               enctype="multipart/form-data">
                                             <div class="mb-2">
                                                 <input type="file" name="photo" accept="image/*"
@@ -138,7 +138,7 @@
                                 {% if p.price > 0 %}£{{ '{:,.0f}'.format(p.price) }}{% else %}<span class="text-muted small">Not for sale</span>{% endif %}
                             </td>
                             <td class="align-middle">
-                                <form method="POST" action="{{ url_for('captain.set_price', player_id=p.id) }}"
+                                <form method="POST" action="{{ url_for('set_price', player_id=p.id) }}"
                                       class="d-flex gap-1">
                                     <input type="number" name="price" class="form-control form-control-sm"
                                            style="width:90px" value="{{ p.price }}" min="0" step="500">

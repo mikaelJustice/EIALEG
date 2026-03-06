@@ -6,7 +6,7 @@
     <h2 style="font-family:'Barlow Condensed',sans-serif;color:var(--lime);letter-spacing:2px">
         <i class="bi bi-newspaper me-3"></i>News Articles
     </h2>
-    <a href="{{ url_for('admin.add_news') }}" class="btn btn-primary">
+    <a href="{{ url_for('add_news') }}" class="btn btn-primary">
         <i class="bi bi-plus-circle me-2"></i>Post News
     </a>
 </div>
@@ -43,11 +43,11 @@
                             {% endif %}
                         </td>
                         <td>
-                            <a href="{{ url_for('admin.edit_news', news_id=a.id) }}"
+                            <a href="{{ url_for('edit_news', news_id=a.id) }}"
                                class="btn btn-sm btn-outline-secondary py-0 px-2 me-1">
                                 <i class="bi bi-pencil"></i>
                             </a>
-                            <form method="POST" action="{{ url_for('admin.delete_news', news_id=a.id) }}"
+                            <form method="POST" action="{{ url_for('delete_news', news_id=a.id) }}"
                                   class="d-inline"
                                   onsubmit="return confirm('Delete this article?')">
                                 <button class="btn btn-sm btn-outline-danger py-0 px-2">
@@ -59,7 +59,7 @@
                     {% else %}
                     <tr>
                         <td colspan="5" class="text-center py-5 text-muted">
-                            No articles yet. <a href="{{ url_for('admin.add_news') }}">Post the first article</a>.
+                            No articles yet. <a href="{{ url_for('add_news') }}">Post the first article</a>.
                         </td>
                     </tr>
                     {% endfor %}

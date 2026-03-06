@@ -7,7 +7,7 @@
         <h1><i class="bi bi-arrow-left-right me-3"></i>Transfer Market</h1>
         <div class="d-flex gap-2 align-items-center">
             <strong style="color:var(--gold)">Budget: £{{ '{:,.0f}'.format(team.balance) }}</strong>
-            <a href="{{ url_for('captain.dashboard') }}" class="btn btn-outline-secondary btn-sm ms-2">Dashboard</a>
+            <a href="{{ url_for('captain_dashboard') }}" class="btn btn-outline-secondary btn-sm ms-2">Dashboard</a>
         </div>
     </div>
 </div>
@@ -41,7 +41,7 @@
                                     </td>
                                     <td>
                                         {% if team.balance >= p.price %}
-                                        <form method="POST" action="{{ url_for('captain.request_transfer', player_id=p.id) }}"
+                                        <form method="POST" action="{{ url_for('request_transfer', player_id=p.id) }}"
                                               onsubmit="return confirm('Request transfer for {{ p.name }} at £{{ '{:,.0f}'.format(p.price) }}?')">
                                             <button class="btn btn-sm btn-success py-0 px-2">
                                                 <i class="bi bi-cart-plus me-1"></i>Buy

@@ -11,7 +11,7 @@
         </h2>
         <p style="font-size:0.78rem; color:var(--grey); text-transform:uppercase; letter-spacing:0.1em; margin:4px 0 0;">Record score, scorers and cards</p>
     </div>
-    <a href="{{ url_for('admin.matches', league=league) }}"
+    <a href="{{ url_for('admin_matches', league=league) }}"
        style="display:inline-flex; align-items:center; gap:8px; font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:0.82rem; letter-spacing:0.1em; text-transform:uppercase; padding:9px 18px; border:1.5px solid rgba(26,31,94,0.2); border-radius:3px; color:var(--navy); text-decoration:none; background:white; transition:all 0.2s;"
        onmouseover="this.style.background='var(--navy)';this.style.color='white'" onmouseout="this.style.background='white';this.style.color='var(--navy)'">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
@@ -211,7 +211,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             Save Result &amp; Apply Prize Money
         </button>
-        <a href="{{ url_for('admin.matches', league=league) }}"
+        <a href="{{ url_for('admin_matches', league=league) }}"
            style="font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:0.85rem; letter-spacing:0.08em; text-transform:uppercase; padding:12px 24px; border:1.5px solid rgba(26,31,94,0.2); border-radius:3px; color:var(--grey); text-decoration:none;">
             Cancel
         </a>

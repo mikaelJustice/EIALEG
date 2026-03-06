@@ -15,11 +15,11 @@
 <div style="background:white; border-bottom:2px solid rgba(26,31,94,0.08); padding:0;">
     <div class="container">
         <div style="display:flex; gap:0;">
-            <a href="{{ url_for('public.teams', league='boys') }}"
+            <a href="{{ url_for('teams', league='boys') }}"
                style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:0.88rem; letter-spacing:0.12em; text-transform:uppercase; padding:14px 28px; text-decoration:none; border-bottom:3px solid {% if league=='boys' %}var(--lime){% else %}transparent{% endif %}; color:{% if league=='boys' %}var(--navy){% else %}var(--grey){% endif %}; margin-bottom:-2px;">
                 Boys League
             </a>
-            <a href="{{ url_for('public.teams', league='girls') }}"
+            <a href="{{ url_for('teams', league='girls') }}"
                style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:0.88rem; letter-spacing:0.12em; text-transform:uppercase; padding:14px 28px; text-decoration:none; border-bottom:3px solid {% if league=='girls' %}var(--lime){% else %}transparent{% endif %}; color:{% if league=='girls' %}var(--navy){% else %}var(--grey){% endif %}; margin-bottom:-2px;">
                 Girls League
             </a>
@@ -92,7 +92,7 @@
                 {% endif %}
 
                 <div style="padding:16px 20px; margin-top:auto;">
-                    <a href="{{ url_for('public.team_detail', team_id=team.id) }}"
+                    <a href="{{ url_for('team_detail', team_id=team.id) }}"
                        class="btn btn-primary" style="width:100%; text-align:center; display:block;">
                         View Full Squad
                     </a>

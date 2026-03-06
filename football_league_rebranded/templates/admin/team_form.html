@@ -6,7 +6,7 @@
     <h2 style="font-family:'Barlow Condensed',sans-serif;color:var(--lime);letter-spacing:2px">
         <i class="bi bi-shield me-2"></i>{{ action }} Team
     </h2>
-    <a href="{{ url_for('admin.teams', league=league) }}" class="btn btn-outline-secondary btn-sm">
+    <a href="{{ url_for('admin_teams', league=league) }}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left me-1"></i>Back
     </a>
 </div>
@@ -70,7 +70,7 @@
                     <button type="submit" class="btn btn-primary px-5">
                         <i class="bi bi-check-circle me-2"></i>{{ action }} Team
                     </button>
-                    <a href="{{ url_for('admin.teams', league=league) }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                    <a href="{{ url_for('admin_teams', league=league) }}" class="btn btn-outline-secondary ms-2">Cancel</a>
                 </div>
             </div>
         </form>
