@@ -16,6 +16,7 @@ from flask import (Flask, render_template_string, request,
                    redirect, url_for, session, flash, g, send_from_directory)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from jinja2 import BaseLoader, Environment, TemplateNotFound
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -32,11 +33,28 @@ PRIZE_LOSS =  -200
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CUSTOM JINJA2 LOADER FOR EMBEDDED TEMPLATES
+# ─────────────────────────────────────────────────────────────────────────────
+TEMPLATES = {}
+
+class TemplatesDictLoader(BaseLoader):
+    """Custom Jinja2 loader that loads templates from TEMPLATES dictionary"""
+    def get_source(self, environment, template):
+        if template not in TEMPLATES:
+            raise TemplateNotFound(template)
+        source = TEMPLATES[template]
+        return source, None, lambda: True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # FLASK APP  (created first so routes can use @app.route)
 # ─────────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+
+# Set up custom Jinja2 loader
+app.jinja_loader = TemplatesDictLoader()
 
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'players'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'news'), exist_ok=True)
@@ -259,8 +277,6 @@ def index():
 # ─────────────────────────────────────────────────────────────────────────────
 # TEMPLATES (all HTML embedded)
 # ─────────────────────────────────────────────────────────────────────────────
-
-TEMPLATES = {}
 
 TEMPLATES['admin/base_admin.html'] = '{% extends "base.html" %}\n\n{% block content %}\n<div class="container-fluid" style="padding:0;">\n    <div class="row g-0" style="min-height:calc(100vh - 110px);">\n        <!-- ADMIN SIDEBAR -->\n        <div class="col-lg-2 col-md-3" style="background:var(--navy); border-right:3px solid var(--lime); min-height:calc(100vh - 110px);">\n            <div style="padding:20px 12px;">\n                <div style="font-family:\'Barlow Condensed\',sans-serif; font-weight:900; font-size:0.72rem; letter-spacing:0.18em; text-transform:uppercase; color:rgba(255,255,255,0.35); margin-bottom:16px; padding:0 8px;">Administration</div>\n                <nav class="admin-nav">\n                    <a href="{{ url_for(\'admin.dashboard\') }}" class="admin-nav-link {% if request.endpoint == \'admin.dashboard\' %}active{% endif %}" style="color:rgba(255,255,255,0.75) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>\n                        Dashboard\n                    </a>\n                    <a href="{{ url_for(\'admin.teams\') }}" class="admin-nav-link {% if \'team\' in request.endpoint %}active{% endif %}" style="color:rgba(255,255,255,0.75) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>\n                        Teams\n                    </a>\n                    <a href="{{ url_for(\'admin.players\') }}" class="admin-nav-link {% if \'player\' in request.endpoint %}active{% endif %}" style="color:rgba(255,255,255,0.75) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>\n                        Players\n                    </a>\n                    <a href="{{ url_for(\'admin.matches\') }}" class="admin-nav-link {% if \'match\' in request.endpoint %}active{% endif %}" style="color:rgba(255,255,255,0.75) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>\n                        Fixtures\n                    </a>\n                    <a href="{{ url_for(\'admin.transfers\') }}" class="admin-nav-link {% if \'transfer\' in request.endpoint %}active{% endif %}" style="color:rgba(255,255,255,0.75) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>\n                        Transfers\n                    </a>\n                    <a href="{{ url_for(\'admin.news\') }}" class="admin-nav-link {% if \'news\' in request.endpoint %}active{% endif %}" style="color:rgba(255,255,255,0.75) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg>\n                        News\n                    </a>\n                    <a href="{{ url_for(\'admin.users\') }}" class="admin-nav-link {% if \'user\' in request.endpoint %}active{% endif %}" style="color:rgba(255,255,255,0.75) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/><line x1="20" y1="8" x2="20" y2="14"/></svg>\n                        Users\n                    </a>\n                    <div style="border-top:1px solid rgba(255,255,255,0.1); margin:12px 0;"></div>\n                    <a href="{{ url_for(\'public.home\') }}" class="admin-nav-link" style="color:rgba(255,255,255,0.5) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>\n                        View Site\n                    </a>\n                    <a href="{{ url_for(\'auth.logout\') }}" class="admin-nav-link" style="color:rgba(224,43,43,0.7) !important;">\n                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>\n                        Logout\n                    </a>\n                </nav>\n            </div>\n        </div>\n\n        <!-- ADMIN CONTENT -->\n        <div class="col-lg-10 col-md-9" style="background:var(--offwhite); padding:32px 36px;">\n            {% block admin_content %}{% endblock %}\n        </div>\n    </div>\n</div>\n{% endblock %}\n'
 
