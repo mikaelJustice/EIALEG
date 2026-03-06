@@ -57,8 +57,7 @@ def create_app():
     # Root redirect to home
     @app.route('/')
     def index():
-        return redirect(url_for('public.home'))
-
+    return redirect(url_for('home'))
     return app
 
 

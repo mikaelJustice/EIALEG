@@ -23,10 +23,10 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
             flash('Please log in.', 'warning')
-            return redirect(url_for('auth.login'))
+            return redirect(url_for('login'))
         if session.get('role') != 'admin':
             flash('Admin access required.', 'danger')
-            return redirect(url_for('public.home'))
+            return redirect(url_for('home'))
         return f(*args, **kwargs)
     return decorated
 
@@ -37,9 +37,9 @@ def captain_required(f):
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
             flash('Please log in.', 'warning')
-            return redirect(url_for('auth.login'))
+            return redirect(url_for('login'))
         if session.get('role') != 'captain':
             flash('Captain access required.', 'danger')
-            return redirect(url_for('public.home'))
+            return redirect(url_for('home'))
         return f(*args, **kwargs)
     return decorated
