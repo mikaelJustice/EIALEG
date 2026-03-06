@@ -1113,9 +1113,10 @@ PRIZE_LOSS =  -200   # loser loses €200
 # DASHBOARD
 # ─────────────────────────────────────────────────────────────────────────────
 
-@app.route('/dashboard')
-@admin_required
-def dashboard():
+@app.route('/captain/dashboard')
+@captain_required
+def captain_dashboard():
+    ...
     db = get_db()
     stats = {
         'teams':            db.execute('SELECT COUNT(*) FROM teams').fetchone()[0],
