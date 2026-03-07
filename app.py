@@ -1323,6 +1323,22 @@ def players():
     return render('admin/players.html', players=players, league=league)
 
 
+@app.route('/admin/players')
+@admin_required
+def admin_players():
+    # Alias for players() endpoint
+    league = request.args.get('league', 'boys')
+    db = get_db()
+    players_list = db.execute('''
+        SELECT p.*, t.name as team_name, t.badge_color as team_color
+        FROM players p
+        LEFT JOIN teams t ON p.team_id = t.id
+        WHERE p.league = ?
+        ORDER BY t.name, p.position, p.name
+    ''', (league,)).fetchall()
+    return render('admin/players.html', players=players_list, league=league)
+
+
 @app.route('/players/add', methods=['GET', 'POST'])
 @admin_required
 def add_player():
@@ -1505,6 +1521,25 @@ def matches():
         ORDER BY m.match_date DESC
     ''', (league,)).fetchall()
     return render('admin/matches.html', matches=matches, league=league)
+
+
+@app.route('/admin/matches')
+@admin_required
+def admin_matches():
+    # Alias for matches() endpoint
+    db = get_db()
+    league = request.args.get('league', 'boys')
+    matches_list = db.execute('''
+        SELECT m.*,
+               ht.name as home_name, ht.badge_color as home_color,
+               at.name as away_name, at.badge_color as away_color
+        FROM matches m
+        JOIN teams ht ON m.home_team_id = ht.id
+        JOIN teams at ON m.away_team_id = at.id
+        WHERE m.league = ?
+        ORDER BY m.match_date DESC
+    ''', (league,)).fetchall()
+    return render('admin/matches.html', matches=matches_list, league=league)
 
 
 @app.route('/matches/add', methods=['GET', 'POST'])
@@ -1806,6 +1841,19 @@ def users():
         ORDER BY u.role, u.username
     ''').fetchall()
     return render('admin/users.html', users=users)
+
+
+@app.route('/admin/users')
+@admin_required
+def admin_users():
+    # Alias for users() endpoint
+    db = get_db()
+    users_list = db.execute('''
+        SELECT u.*, t.name as team_name, t.league as team_league FROM users u
+        LEFT JOIN teams t ON u.team_id = t.id
+        ORDER BY u.role, u.username
+    ''').fetchall()
+    return render('admin/users.html', users=users_list)
 
 
 @app.route('/users/add', methods=['GET', 'POST'])
