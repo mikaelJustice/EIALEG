@@ -1128,6 +1128,37 @@ PRIZE_LOSS =  -200   # loser loses €200
 # ─────────────────────────────────────────────────────────────────────────────
 # DASHBOARD
 # ─────────────────────────────────────────────────────────────────────────────
+# ADMIN DASHBOARD
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/admin/dashboard')
+@admin_required
+def admin_dashboard():
+    db = get_db()
+    stats = {
+        'teams':            db.execute('SELECT COUNT(*) FROM teams').fetchone()[0],
+        'players':          db.execute('SELECT COUNT(*) FROM players').fetchone()[0],
+        'matches_played':   db.execute("SELECT COUNT(*) FROM matches WHERE status='played'").fetchone()[0],
+        'pending_transfers':db.execute("SELECT COUNT(*) FROM transfers WHERE status='pending'").fetchone()[0],
+        'boys_teams':       db.execute("SELECT COUNT(*) FROM teams WHERE league='boys'").fetchone()[0],
+        'girls_teams':      db.execute("SELECT COUNT(*) FROM teams WHERE league='girls'").fetchone()[0],
+    }
+    recent_transfers = db.execute('''
+        SELECT t.*, p.name as player_name,
+               ft.name as from_team, tt.name as to_team,
+               u.username as captain
+        FROM transfers t
+        JOIN players p ON t.player_id = p.id
+        LEFT JOIN teams ft ON t.from_team_id = ft.id
+        JOIN teams tt ON t.to_team_id = tt.id
+        JOIN users u ON t.requested_by = u.id
+        WHERE t.status = 'pending'
+        ORDER BY t.requested_at DESC LIMIT 10
+    ''').fetchall()
+    return render('admin/dashboard.html', stats=stats, recent_transfers=recent_transfers)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 @app.route('/captain/dashboard')
 @captain_required
